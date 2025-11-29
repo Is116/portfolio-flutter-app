@@ -10,17 +10,23 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isNFCAvailable = false;
   bool _isWriting = false;
   bool _isSharingWhatsApp = false;
   bool _isSharingContact = false;
+  bool _isSharingVCard = false;
   String? _message;
+  
+  late AnimationController _nfcAnimationController;
+  late Animation<double> _nfcPulseAnimation;
 
   // Text editing controllers for editable fields
   late TextEditingController _portfolioUrlController;
   late TextEditingController _whatsappUrlController;
   late TextEditingController _phoneNumberController;
+  late TextEditingController _nameController;
+  late TextEditingController _emailController;
 
   @override
   void initState() {
@@ -31,7 +37,23 @@ class _HomeScreenState extends State<HomeScreen> {
     _whatsappUrlController = TextEditingController(
       text: 'https://wa.me/358413671742',
     );
-    _phoneNumberController = TextEditingController(text: '+358413671742');
+    _phoneNumberController = TextEditingController(text: '+358 41 367 1742');
+    _nameController = TextEditingController(text: 'Isuru Pathirathna');
+    _emailController = TextEditingController(text: 'isuru2002@gmail.com');
+    
+    // NFC animation setup
+    _nfcAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat();
+    
+    _nfcPulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _nfcAnimationController,
+        curve: Curves.easeOut,
+      ),
+    );
+    
     _checkNFC();
   }
 
@@ -40,6 +62,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _portfolioUrlController.dispose();
     _whatsappUrlController.dispose();
     _phoneNumberController.dispose();
+    _nameController.dispose();
+    _emailController.dispose();
+    _nfcAnimationController.dispose();
     super.dispose();
   }
 
@@ -55,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isWriting = true;
       _isSharingWhatsApp = false;
       _isSharingContact = false;
+      _isSharingVCard = false;
       _message =
           'Ready! Hold your phone steady and have someone tap their phone to the back.';
     });
@@ -82,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _isSharingWhatsApp = true;
       _isWriting = false;
       _isSharingContact = false;
+      _isSharingVCard = false;
       _message =
           'Ready to share WhatsApp! Have someone tap their phone to the back.';
     });
@@ -108,13 +135,16 @@ class _HomeScreenState extends State<HomeScreen> {
       _isSharingContact = true;
       _isWriting = false;
       _isSharingWhatsApp = false;
+      _isSharingVCard = false;
       _message =
           'Ready to share contact! Have someone tap their phone to the back.';
     });
 
     try {
       // Share a tel: URL that will open in contacts app
-      await NFCService.pushURL('tel:${_phoneNumberController.text}');
+      // Remove spaces from phone number for tel: URI
+      final phoneNumber = _phoneNumberController.text.replaceAll(' ', '');
+      await NFCService.pushURL('tel:$phoneNumber');
 
       await Future.delayed(const Duration(seconds: 60));
 
@@ -130,13 +160,51 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _pushVCardToNFC() async {
+    setState(() {
+      _isSharingVCard = true;
+      _isWriting = false;
+      _isSharingWhatsApp = false;
+      _isSharingContact = false;
+      _message =
+          'Ready to share full contact! Have someone tap their phone to the back.';
+    });
+
+    try {
+      // Create vCard format
+      final phoneNumber = _phoneNumberController.text.replaceAll(' ', '');
+      final vCard = '''BEGIN:VCARD
+VERSION:3.0
+FN:${_nameController.text}
+TEL:$phoneNumber
+EMAIL:${_emailController.text}
+URL:${_portfolioUrlController.text}
+END:VCARD''';
+      
+      await NFCService.pushURL(vCard);
+
+      await Future.delayed(const Duration(seconds: 60));
+
+      setState(() {
+        _isSharingVCard = false;
+        _message = 'vCard sharing ended.';
+      });
+    } catch (e) {
+      setState(() {
+        _isSharingVCard = false;
+        _message = 'Error: ${e.toString()}';
+      });
+    }
+  }
+
   void _stopSharing() async {
-    if (_isWriting || _isSharingWhatsApp || _isSharingContact) {
+    if (_isWriting || _isSharingWhatsApp || _isSharingContact || _isSharingVCard) {
       await NFCService.stopHCE();
       setState(() {
         _isWriting = false;
         _isSharingWhatsApp = false;
         _isSharingContact = false;
+        _isSharingVCard = false;
         _message = 'Stopped sharing.';
       });
     }
@@ -156,6 +224,67 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget _buildNFCAnimation() {
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: AnimatedBuilder(
+        animation: _nfcPulseAnimation,
+        builder: (context, child) {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              // Outer expanding ring
+              if (_nfcPulseAnimation.value > 0.2)
+                Container(
+                  width: 24 * _nfcPulseAnimation.value,
+                  height: 24 * _nfcPulseAnimation.value,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(
+                        (1 - _nfcPulseAnimation.value) * 0.8,
+                      ),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              // Middle expanding ring
+              if (_nfcPulseAnimation.value > 0.1)
+                Container(
+                  width: 20 * (_nfcPulseAnimation.value * 0.7),
+                  height: 20 * (_nfcPulseAnimation.value * 0.7),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(
+                        (1 - _nfcPulseAnimation.value * 0.7) * 0.6,
+                      ),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              // Center NFC icon
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                ),
+                child: Icon(
+                  Icons.nfc,
+                  size: 8,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -325,14 +454,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ElevatedButton.icon(
                     onPressed: _isWriting ? _stopSharing : _pushToNFC,
                     icon: _isWriting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
+                        ? _buildNFCAnimation()
                         : const Icon(Icons.web, size: 24),
                     label: Text(
                       _isWriting
@@ -356,14 +478,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? _stopSharing
                         : _pushWhatsAppToNFC,
                     icon: _isSharingWhatsApp
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
+                        ? _buildNFCAnimation()
                         : const Icon(Icons.chat, size: 24),
                     label: Text(
                       _isSharingWhatsApp
@@ -387,19 +502,36 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? _stopSharing
                         : _pushContactToNFC,
                     icon: _isSharingContact
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
+                        ? _buildNFCAnimation()
                         : const Icon(Icons.contact_page, size: 24),
                     label: Text(
                       _isSharingContact
                           ? 'Stop Sharing Contact'
                           : 'Share Contact via NFC',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Share vCard Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSharingVCard
+                        ? _stopSharing
+                        : _pushVCardToNFC,
+                    icon: _isSharingVCard
+                        ? _buildNFCAnimation()
+                        : const Icon(Icons.contact_mail, size: 24),
+                    label: Text(
+                      _isSharingVCard
+                          ? 'Stop Sharing vCard'
+                          : 'Share Full Contact (vCard)',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -474,6 +606,123 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Name
+                    Text(
+                      'Name',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      decoration: InputDecoration(
+                        prefixIcon: Icon(
+                          Icons.person,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.1),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.3),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.3),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Email
+                    Text(
+                      'Email',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      decoration: InputDecoration(
+                        prefixIcon: Icon(
+                          Icons.email,
+                          size: 16,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.primary.withOpacity(0.1),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withOpacity(0.3),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withOpacity(0.3),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).colorScheme.primary,
+                            width: 2,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     // Portfolio URL
                     Text(
                       'Portfolio URL',
@@ -718,8 +967,22 @@ class _HomeScreenState extends State<HomeScreen> {
               // Phone QR Code
               _buildQRCard(
                 title: 'Phone Number',
-                data: 'tel:${_phoneNumberController.text}',
+                data: 'tel:${_phoneNumberController.text.replaceAll(' ', '')}',
                 icon: Icons.phone,
+              ),
+              const SizedBox(height: 16),
+
+              // vCard QR Code
+              _buildQRCard(
+                title: 'Full Contact (vCard)',
+                data: '''BEGIN:VCARD
+VERSION:3.0
+FN:${_nameController.text}
+TEL:${_phoneNumberController.text.replaceAll(' ', '')}
+EMAIL:${_emailController.text}
+URL:${_portfolioUrlController.text}
+END:VCARD''',
+                icon: Icons.contact_mail,
               ),
               const SizedBox(height: 48),
 

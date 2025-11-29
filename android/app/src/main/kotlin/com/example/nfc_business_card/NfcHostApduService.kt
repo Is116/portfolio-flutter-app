@@ -23,6 +23,7 @@ class NfcHostApduService : HostApduService() {
         // Cached NDEF message and CC
         private var cachedNdefMessage: ByteArray? = null
         private var cachedCC: ByteArray? = null
+        private var lastCachedUrl: String? = null
         
         // Track current selected file for context
         @Volatile
@@ -41,9 +42,11 @@ class NfcHostApduService : HostApduService() {
         // Update cached messages if URL changed or cache is empty
         val url = ndefUrl
         if (url != null) {
-            if (cachedNdefMessage == null) {
+            // Regenerate cache if URL changed
+            if (cachedNdefMessage == null || lastCachedUrl != url) {
                 cachedNdefMessage = createNdefMessage(url)
-                Log.d(TAG, "Created NDEF message for: $url")
+                lastCachedUrl = url
+                Log.d(TAG, "Created/Updated NDEF message for: $url")
             }
             if (cachedCC == null) {
                 cachedCC = createCapabilityContainer()
@@ -151,12 +154,48 @@ class NfcHostApduService : HostApduService() {
     }
 
     private fun createNdefMessage(url: String): ByteArray {
-        // Determine URI prefix code
+        // Check if it's a vCard (starts with BEGIN:VCARD)
+        return if (url.startsWith("BEGIN:VCARD")) {
+            createTextNdefMessage(url)
+        } else {
+            createUriNdefMessage(url)
+        }
+    }
+
+    private fun createTextNdefMessage(text: String): ByteArray {
+        val textBytes = text.toByteArray(StandardCharsets.UTF_8)
+        val languageCode = "en".toByteArray(StandardCharsets.US_ASCII)
+        
+        // Text record payload: [status byte, language code, text]
+        // Status byte: bit 7 = encoding (0 = UTF-8), bits 5-0 = language code length
+        val statusByte = languageCode.size.toByte()
+        val payload = byteArrayOf(statusByte) + languageCode + textBytes
+        
+        // NDEF Record: TNF=0x01 (Well Known), Type='T' (Text)
+        val recordHeader = 0xD1.toByte() // MB=1, ME=1, CF=0, SR=1, IL=0, TNF=0x01
+        val typeLength = 0x01.toByte()
+        val payloadLength = payload.size.toByte()
+        val recordType = 0x54.toByte() // 'T' for Text
+        
+        // Build NDEF record
+        val record = byteArrayOf(recordHeader, typeLength, payloadLength, recordType) + payload
+        
+        // NDEF message with length prefix
+        val messageLength = record.size
+        val lengthBytes = byteArrayOf((messageLength shr 8).toByte(), messageLength.toByte())
+        
+        return lengthBytes + record
+    }
+
+    private fun createUriNdefMessage(url: String): ByteArray {
+        // Determine URI prefix code (NDEF URI Record Type Definition)
         val (prefixCode, remainingUrl) = when {
             url.startsWith("https://www.") -> Pair(0x02.toByte(), url.substring(12))
             url.startsWith("http://www.") -> Pair(0x01.toByte(), url.substring(11))
             url.startsWith("https://") -> Pair(0x04.toByte(), url.substring(8))
             url.startsWith("http://") -> Pair(0x03.toByte(), url.substring(7))
+            url.startsWith("tel:") -> Pair(0x05.toByte(), url.substring(4))
+            url.startsWith("mailto:") -> Pair(0x06.toByte(), url.substring(7))
             else -> Pair(0x00.toByte(), url)
         }
 
