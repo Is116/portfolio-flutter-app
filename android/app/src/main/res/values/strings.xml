@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NFC Business Card</string>
+    <string name="service_description">NFC Card Emulation Service</string>
+    <string name="aid_group_description">NDEF Tag Emulation</string>
+</resources>
