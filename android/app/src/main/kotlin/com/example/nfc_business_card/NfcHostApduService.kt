@@ -20,23 +20,38 @@ class NfcHostApduService : HostApduService() {
         @Volatile
         var ndefUrl: String? = null
         
-        // Cached NDEF message
+        // Cached NDEF message and CC
         private var cachedNdefMessage: ByteArray? = null
+        private var cachedCC: ByteArray? = null
+        
+        // Track current selected file for context
+        @Volatile
+        private var currentFileId: String? = null
     }
 
     override fun processCommandApdu(commandApdu: ByteArray?, extras: Bundle?): ByteArray {
         if (commandApdu == null) {
+            Log.w(TAG, "Null APDU received")
             return hexStringToByteArray(STATUS_FAILED)
         }
 
         val hexCommandApdu = bytesToHex(commandApdu)
         Log.d(TAG, "Received APDU: $hexCommandApdu")
 
-        // Update cached NDEF message if URL changed
+        // Update cached messages if URL changed or cache is empty
         val url = ndefUrl
-        if (url != null && cachedNdefMessage == null) {
-            cachedNdefMessage = createNdefMessage(url)
-            Log.d(TAG, "Created NDEF message for: $url")
+        if (url != null) {
+            if (cachedNdefMessage == null) {
+                cachedNdefMessage = createNdefMessage(url)
+                Log.d(TAG, "Created NDEF message for: $url")
+            }
+            if (cachedCC == null) {
+                cachedCC = createCapabilityContainer()
+                Log.d(TAG, "Created Capability Container")
+            }
+        } else {
+            Log.w(TAG, "No URL set for HCE")
+            return hexStringToByteArray(STATUS_FAILED)
         }
 
         // SELECT application (00A40400)
@@ -59,15 +74,17 @@ class NfcHostApduService : HostApduService() {
             
             when (fileId) {
                 CC_FILE -> {
+                    currentFileId = CC_FILE
                     Log.d(TAG, "Capability Container selected")
                     return hexStringToByteArray(STATUS_SUCCESS)
                 }
                 NDEF_FILE -> {
+                    currentFileId = NDEF_FILE
                     Log.d(TAG, "NDEF file selected")
                     return hexStringToByteArray(STATUS_SUCCESS)
                 }
                 else -> {
-                    Log.d(TAG, "File select success (generic)")
+                    Log.d(TAG, "File select success (generic): $fileId")
                     return hexStringToByteArray(STATUS_SUCCESS)
                 }
             }
@@ -78,24 +95,30 @@ class NfcHostApduService : HostApduService() {
             val offset = ((commandApdu[2].toInt() and 0xFF) shl 8) or (commandApdu[3].toInt() and 0xFF)
             val length = commandApdu[4].toInt() and 0xFF
             
-            Log.d(TAG, "READ BINARY offset=$offset length=$length")
+            Log.d(TAG, "READ BINARY offset=$offset length=$length currentFile=$currentFileId")
             
-            // Return Capability Container
-            if (offset == 0 && length == 15) {
-                val cc = createCapabilityContainer()
+            // Return Capability Container if CC file is selected or offset suggests CC read
+            if (currentFileId == CC_FILE || (offset == 0 && length == 15)) {
+                val cc = cachedCC ?: createCapabilityContainer()
                 Log.d(TAG, "Returning CC: ${bytesToHex(cc)}")
                 return cc + hexStringToByteArray(STATUS_SUCCESS)
             }
             
-            // Return NDEF message
+            // Return NDEF message for NDEF file or other reads
             val ndef = cachedNdefMessage
             if (ndef != null) {
                 val end = minOf(offset + length, ndef.size)
                 if (offset < ndef.size) {
                     val chunk = ndef.copyOfRange(offset, end)
-                    Log.d(TAG, "Returning NDEF chunk: offset=$offset size=${chunk.size}")
+                    Log.d(TAG, "Returning NDEF chunk: offset=$offset size=${chunk.size} of ${ndef.size}")
                     return chunk + hexStringToByteArray(STATUS_SUCCESS)
+                } else {
+                    Log.w(TAG, "Read offset $offset beyond NDEF size ${ndef.size}")
+                    return hexStringToByteArray(STATUS_FAILED)
                 }
+            } else {
+                Log.w(TAG, "No NDEF message cached")
+                return hexStringToByteArray(STATUS_FAILED)
             }
         }
 
@@ -123,7 +146,8 @@ class NfcHostApduService : HostApduService() {
 
     override fun onDeactivated(reason: Int) {
         Log.d(TAG, "HCE deactivated. Reason: $reason")
-        // Don't clear the message - keep it for next tap
+        // Reset file selection but keep cached messages for next tap
+        currentFileId = null
     }
 
     private fun createNdefMessage(url: String): ByteArray {

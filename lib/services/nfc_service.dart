@@ -81,11 +81,9 @@ class NFCService {
 
             // Create vCard format
             String vCard = _createVCard(portfolioData);
-            
+
             // Create NDEF records
-            List<NdefRecord> records = [
-              _createTextRecord(vCard),
-            ];
+            List<NdefRecord> records = [_createTextRecord(vCard)];
 
             // Add website URL if available
             if (portfolioData.website.isNotEmpty) {
@@ -127,13 +125,15 @@ class NFCService {
 
     bool hceSupported = await isHCESupported();
     if (!hceSupported) {
-      throw Exception('HCE (Host Card Emulation) is not supported on this device');
+      throw Exception(
+        'HCE (Host Card Emulation) is not supported on this device',
+      );
     }
 
     try {
       // Start HCE mode - your phone becomes an NFC tag
       await platform.invokeMethod('startHCE', {'url': url});
-      
+
       // Keep the HCE service active
       // It will automatically respond when another phone taps
     } catch (e) {
@@ -194,8 +194,9 @@ class NFCService {
     ];
 
     final prefixCode = record.payload[0];
-    final prefix =
-        prefixCode < uriPrefixes.length ? uriPrefixes[prefixCode] : '';
+    final prefix = prefixCode < uriPrefixes.length
+        ? uriPrefixes[prefixCode]
+        : '';
     final uriBytes = record.payload.sublist(1);
     final uri = utf8.decode(uriBytes);
 

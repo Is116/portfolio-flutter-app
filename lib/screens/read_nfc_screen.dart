@@ -39,7 +39,7 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
 
     try {
       final url = await NFCService.readNFC();
-      
+
       final result = {
         'success': url != null && url.isNotEmpty,
         'url': url,
@@ -59,10 +59,7 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
     } catch (e) {
       setState(() {
         _isReading = false;
-        _readData = {
-          'success': false,
-          'message': e.toString(),
-        };
+        _readData = {'success': false, 'message': e.toString()};
       });
     }
   }
@@ -105,15 +102,15 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
                 'Records found: ${data['recordCount'] ?? 0}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              if (data['data'] != null && (data['data'] as List).isNotEmpty) ...[
+              if (data['data'] != null &&
+                  (data['data'] as List).isNotEmpty) ...[
                 const SizedBox(height: 12),
-                ...((data['data'] as List).map((text) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        text,
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ))),
+                ...((data['data'] as List).map(
+                  (text) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(text, style: const TextStyle(fontSize: 12)),
+                  ),
+                )),
               ],
             ],
           ),
@@ -222,27 +219,27 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
                       ),
                     )
                   : _readData != null
-                      ? _buildResultCard()
-                      : Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.touch_app,
-                                size: 80,
-                                color: Colors.grey[700],
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Ready to scan',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey[500],
-                                ),
-                              ),
-                            ],
+                  ? _buildResultCard()
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.touch_app,
+                            size: 80,
+                            color: Colors.grey[700],
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Ready to scan',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
             ),
 
             const SizedBox(height: 24),
@@ -256,10 +253,7 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
                   icon: const Icon(Icons.nfc, size: 24),
                   label: const Text(
                     'Start Reading',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -276,10 +270,7 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
                     NFCService.stopSession();
                     setState(() => _isReading = false);
                   },
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(fontSize: 16),
-                  ),
+                  child: const Text('Cancel', style: TextStyle(fontSize: 16)),
                 ),
               ),
             ],
@@ -326,10 +317,7 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
                 if (_readData!['url'] != null) ...[
                   const Text(
                     'Website:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   InkWell(
@@ -362,22 +350,21 @@ class _ReadNFCScreenState extends State<ReadNFCScreen>
                   const SizedBox(height: 12),
                   const Text(
                     'Data:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
-                  ...(_readData!['data'] as List).map((text) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          text,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                          ),
+                  ...(_readData!['data'] as List).map(
+                    (text) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        text,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'monospace',
                         ),
-                      )),
+                      ),
+                    ),
+                  ),
                 ],
               ] else ...[
                 Text(
