@@ -5,9 +5,9 @@ Share your contact info and portfolio instantly using NFC or QR codes.
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/nfc_share.png" width="250" alt="NFC Share" />
-  <img src="screenshots/qr_codes.png" width="250" alt="QR Codes" />
-  <img src="screenshots/settings.png" width="250" alt="Settings" />
+  <img src="screenshots/nfc_share.jpeg" width="250" alt="NFC Share" />
+  <img src="screenshots/qr_codes.jpeg" width="250" alt="QR Codes" />
+  <img src="screenshots/settings.jpeg" width="250" alt="Settings" />
 </p>
 
 ## Features
