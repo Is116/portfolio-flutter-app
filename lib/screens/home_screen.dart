@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../services/nfc_service.dart';
+import '../services/storage_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,7 +18,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   bool _isSharingContact = false;
   bool _isSharingVCard = false;
   String? _message;
-  
+
   late AnimationController _nfcAnimationController;
   late Animation<double> _nfcPulseAnimation;
 
@@ -31,30 +32,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _portfolioUrlController = TextEditingController(
-      text: 'https://isuru-portfolio-ten.vercel.app/',
-    );
-    _whatsappUrlController = TextEditingController(
-      text: 'https://wa.me/358413671742',
-    );
-    _phoneNumberController = TextEditingController(text: '+358 41 367 1742');
-    _nameController = TextEditingController(text: 'Isuru Pathirathna');
-    _emailController = TextEditingController(text: 'isuru2002@gmail.com');
-    
+    _portfolioUrlController = TextEditingController();
+    _whatsappUrlController = TextEditingController();
+    _phoneNumberController = TextEditingController();
+    _nameController = TextEditingController();
+    _emailController = TextEditingController();
+
     // NFC animation setup
     _nfcAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat();
-    
+
     _nfcPulseAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _nfcAnimationController,
-        curve: Curves.easeOut,
-      ),
+      CurvedAnimation(parent: _nfcAnimationController, curve: Curves.easeOut),
     );
-    
+
+    _loadData();
     _checkNFC();
+  }
+
+  Future<void> _loadData() async {
+    final data = await StorageService.loadData();
+    _nameController.text = data['name'] ?? 'Isuru Pathirathna';
+    _emailController.text = data['email'] ?? 'isuru2002@gmail.com';
+    _phoneNumberController.text = data['phone'] ?? '+358 41 367 1742';
+    _portfolioUrlController.text = data['portfolio'] ?? 'https://isuru-portfolio-ten.vercel.app/';
+    _whatsappUrlController.text = data['whatsapp'] ?? 'https://wa.me/358413671742';
+    setState(() {});
   }
 
   @override
@@ -141,10 +146,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
 
     try {
-      // Share a tel: URL that will open in contacts app
-      // Remove spaces from phone number for tel: URI
+      // Share phone number as a simple vCard for NFC compatibility
+      // Full vCard is more reliable via NFC than tel: URI
       final phoneNumber = _phoneNumberController.text.replaceAll(' ', '');
-      await NFCService.pushURL('tel:$phoneNumber');
+      final contactVCard =
+          '''BEGIN:VCARD
+VERSION:3.0
+FN:${_nameController.text}
+TEL:$phoneNumber
+END:VCARD''';
+      await NFCService.pushURL(contactVCard);
 
       await Future.delayed(const Duration(seconds: 60));
 
@@ -173,14 +184,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     try {
       // Create vCard format
       final phoneNumber = _phoneNumberController.text.replaceAll(' ', '');
-      final vCard = '''BEGIN:VCARD
+      final vCard =
+          '''BEGIN:VCARD
 VERSION:3.0
 FN:${_nameController.text}
 TEL:$phoneNumber
 EMAIL:${_emailController.text}
 URL:${_portfolioUrlController.text}
 END:VCARD''';
-      
+
       await NFCService.pushURL(vCard);
 
       await Future.delayed(const Duration(seconds: 60));
@@ -198,7 +210,10 @@ END:VCARD''';
   }
 
   void _stopSharing() async {
-    if (_isWriting || _isSharingWhatsApp || _isSharingContact || _isSharingVCard) {
+    if (_isWriting ||
+        _isSharingWhatsApp ||
+        _isSharingContact ||
+        _isSharingVCard) {
       await NFCService.stopHCE();
       setState(() {
         _isWriting = false;
@@ -217,15 +232,29 @@ END:VCARD''';
     }
   }
 
-  void _saveSettings() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Settings saved successfully!'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  Future<void> _saveSettings() async {
+    final data = {
+      'name': _nameController.text,
+      'email': _emailController.text,
+      'phone': _phoneNumberController.text,
+      'portfolio': _portfolioUrlController.text,
+      'whatsapp': _whatsappUrlController.text,
+    };
+    
+    final success = await StorageService.saveData(data);
+    
+    if (mounted) {
+      setState(() {}); // Refresh UI with updated values
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(success ? 'Settings saved successfully!' : 'Failed to save settings'),
+          backgroundColor: success ? Theme.of(context).colorScheme.primary : Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Widget _buildNFCAnimation() {
@@ -363,7 +392,7 @@ END:VCARD''';
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -375,10 +404,11 @@ END:VCARD''';
             tabs: const [
               Tab(icon: Icon(Icons.nfc), text: 'NFC Share'),
               Tab(icon: Icon(Icons.qr_code), text: 'QR Codes'),
+              Tab(icon: Icon(Icons.settings), text: 'Settings'),
             ],
           ),
         ),
-        body: TabBarView(children: [_buildNFCTab(), _buildQRTab()]),
+        body: TabBarView(children: [_buildNFCTab(), _buildQRTab(), _buildSettingsTab()]),
       ),
     );
   }
@@ -410,9 +440,9 @@ END:VCARD''';
               const SizedBox(height: 32),
 
               // Title
-              const Text(
-                'Isuru Pathirathna',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              Text(
+                _nameController.text.isNotEmpty ? _nameController.text : 'Your Name',
+                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -522,9 +552,7 @@ END:VCARD''';
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton.icon(
-                    onPressed: _isSharingVCard
-                        ? _stopSharing
-                        : _pushVCardToNFC,
+                    onPressed: _isSharingVCard ? _stopSharing : _pushVCardToNFC,
                     icon: _isSharingVCard
                         ? _buildNFCAnimation()
                         : const Icon(Icons.contact_mail, size: 24),
@@ -594,327 +622,11 @@ END:VCARD''';
                 label: const Text('Preview Portfolio'),
               ),
 
-              const SizedBox(height: 48),
-
-              // Information Display Section
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Name
-                    Text(
-                      'Name',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _nameController,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.person,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.1),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.3),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Email
-                    Text(
-                      'Email',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.email,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.1),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withOpacity(0.3),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Portfolio URL
-                    Text(
-                      'Portfolio URL',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _portfolioUrlController,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.link,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.1),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // WhatsApp Link
-                    Text(
-                      'WhatsApp Link',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _whatsappUrlController,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.chat,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.1),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Phone Number
-                    Text(
-                      'Phone Number',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[500],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _phoneNumberController,
-                      keyboardType: TextInputType.phone,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.phone,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        filled: true,
-                        fillColor: Theme.of(
-                          context,
-                        ).colorScheme.primary.withOpacity(0.1),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withOpacity(0.3),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                            width: 2,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Save Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _saveSettings,
-                        icon: const Icon(Icons.save, size: 20),
-                        label: const Text('Save Settings'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 32),
 
               // Made by footer
               Text(
-                'Made by Isuru Pathirathna',
+                'Made by ${_nameController.text}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[500]),
               ),
               const SizedBox(height: 16),
@@ -922,6 +634,202 @@ END:VCARD''';
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildSettingsTab() {
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 32),
+              
+              // Header
+              const Text(
+                'Settings',
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Edit your information for NFC and QR sharing',
+                style: TextStyle(fontSize: 14, color: Colors.grey[400]),
+              ),
+              const SizedBox(height: 32),
+
+              // Settings Form
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Name
+                    _buildSettingField(
+                      label: 'Name',
+                      controller: _nameController,
+                      icon: Icons.person,
+                      keyboardType: TextInputType.name,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Email
+                    _buildSettingField(
+                      label: 'Email',
+                      controller: _emailController,
+                      icon: Icons.email,
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Phone Number
+                    _buildSettingField(
+                      label: 'Phone Number',
+                      controller: _phoneNumberController,
+                      icon: Icons.phone,
+                      keyboardType: TextInputType.phone,
+                      hint: '+358 41 367 1742',
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Portfolio URL
+                    _buildSettingField(
+                      label: 'Portfolio URL',
+                      controller: _portfolioUrlController,
+                      icon: Icons.web,
+                      keyboardType: TextInputType.url,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // WhatsApp URL
+                    _buildSettingField(
+                      label: 'WhatsApp URL',
+                      controller: _whatsappUrlController,
+                      icon: Icons.chat,
+                      keyboardType: TextInputType.url,
+                      hint: 'https://wa.me/358413671742',
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              // Save Button
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: _saveSettings,
+                  icon: const Icon(Icons.save, size: 24),
+                  label: const Text(
+                    'Save Settings',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Info Card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Changes will be applied to both NFC and QR code sharing',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[300],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingField({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    TextInputType? keyboardType,
+    String? hint,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[400],
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          style: const TextStyle(fontSize: 15),
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, size: 20),
+            hintText: hint,
+            filled: true,
+            fillColor: Theme.of(context).colorScheme.primary.withOpacity(0.05),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.primary,
+                width: 2,
+              ),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -975,7 +883,8 @@ END:VCARD''';
               // vCard QR Code
               _buildQRCard(
                 title: 'Full Contact (vCard)',
-                data: '''BEGIN:VCARD
+                data:
+                    '''BEGIN:VCARD
 VERSION:3.0
 FN:${_nameController.text}
 TEL:${_phoneNumberController.text.replaceAll(' ', '')}

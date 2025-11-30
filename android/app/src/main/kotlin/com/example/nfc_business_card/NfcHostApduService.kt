@@ -156,7 +156,7 @@ class NfcHostApduService : HostApduService() {
     private fun createNdefMessage(url: String): ByteArray {
         // Check if it's a vCard (starts with BEGIN:VCARD)
         return if (url.startsWith("BEGIN:VCARD")) {
-            createTextNdefMessage(url)
+            createVCardNdefMessage(url)
         } else {
             createUriNdefMessage(url)
         }
@@ -179,6 +179,25 @@ class NfcHostApduService : HostApduService() {
         
         // Build NDEF record
         val record = byteArrayOf(recordHeader, typeLength, payloadLength, recordType) + payload
+        
+        // NDEF message with length prefix
+        val messageLength = record.size
+        val lengthBytes = byteArrayOf((messageLength shr 8).toByte(), messageLength.toByte())
+        
+        return lengthBytes + record
+    }
+
+    private fun createVCardNdefMessage(vcard: String): ByteArray {
+        val vcardBytes = vcard.toByteArray(StandardCharsets.UTF_8)
+        val mimeType = "text/vcard".toByteArray(StandardCharsets.US_ASCII)
+        
+        // NDEF Record: TNF=0x02 (MIME Media-type), Type='text/vcard'
+        val recordHeader = 0xD2.toByte() // MB=1, ME=1, CF=0, SR=1, IL=0, TNF=0x02
+        val typeLength = mimeType.size.toByte()
+        val payloadLength = vcardBytes.size.toByte()
+        
+        // Build NDEF record
+        val record = byteArrayOf(recordHeader, typeLength, payloadLength) + mimeType + vcardBytes
         
         // NDEF message with length prefix
         val messageLength = record.size
